@@ -1,10 +1,15 @@
 const express = require("express");
 const http = require("http");
-const WebSocket = require("ws");
+const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+
+const io = new Server(server, {
+  cors: {
+    origin: "*"
+  }
+});
 
 const rooms = {};
 
@@ -12,72 +17,62 @@ app.get("/", (req, res) => {
   res.send("VibeCash Voice Server Running");
 });
 
-wss.on("connection", (ws) => {
+io.on("connection", (socket) => {
 
-  ws.roomId = null;
-  ws.userId = null;
+  console.log("User Connected: " + socket.id);
 
-  ws.on("message", (message) => {
+  socket.on("join", (data) => {
 
-    try {
+    socket.join(data.roomId);
 
-      const data = JSON.parse(message.toString());
+    socket.roomId = data.roomId;
+    socket.userId = data.userId;
 
-      if (data.type === "join") {
-
-        ws.roomId = data.roomId;
-        ws.userId = data.userId;
-
-        if (!rooms[ws.roomId]) {
-          rooms[ws.roomId] = [];
-        }
-
-        rooms[ws.roomId].push(ws);
-
-        ws.send(JSON.stringify({
-          type: "joined",
-          roomId: ws.roomId
-        }));
-
-        return;
-      }
-
-      if (data.type === "chat") {
-
-        const users = rooms[ws.roomId] || [];
-
-        users.forEach(client => {
-
-          if (client !== ws &&
-              client.readyState === WebSocket.OPEN) {
-
-            client.send(JSON.stringify({
-              type: "chat",
-              userId: ws.userId,
-              message: data.message
-            }));
-
-          }
-
-        });
-
-      }
-
-    } catch (e) {
-      console.log(e);
+    if (!rooms[data.roomId]) {
+      rooms[data.roomId] = {};
     }
+
+    rooms[data.roomId][socket.id] = data.userId;
+
+    socket.emit("joined", {
+      roomId: data.roomId
+    });
+
+    socket.to(data.roomId).emit("user_joined", {
+      userId: data.userId
+    });
 
   });
 
-  ws.on("close", () => {
+  socket.on("chat", (data) => {
 
-    if (ws.roomId && rooms[ws.roomId]) {
+    socket.to(socket.roomId).emit("chat", {
+      userId: socket.userId,
+      message: data.message
+    });
 
-      rooms[ws.roomId] =
-      rooms[ws.roomId].filter(c => c !== ws);
+  });
 
-      if (rooms[ws.roomId].length === 0) {
-        delete rooms[ws.roomId];
+  socket.on("voice", (buffer) => {
+
+    socket.to(socket.roomId).emit("voice", buffer);
+
+  });
+
+  socket.on("disconnect", () => {
+
+    console.log("Disconnected");
+
+    if (socket.roomId && rooms[socket.roomId]) {
+
+      delete rooms[socket.roomId][socket.id];
+
+      socket.to(socket.roomId).emit("user_left", {
+        userId: socket.userId
+      });
+
+      if (Object.keys(rooms[socket.roomId]).length === 0) {
+        delete rooms[socket.roomId];
       }
 
     }
@@ -89,5 +84,5 @@ wss.on("connection", (ws) => {
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-  console.log("Voice Server Started : " + PORT);
+  console.log("Voice Server Started on " + PORT);
 });
