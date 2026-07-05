@@ -1,4 +1,4 @@
-const express = require("express");
+    const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
@@ -14,7 +14,7 @@ const io = new Server(server, {
 const rooms = {};
 
 app.get("/", (req, res) => {
-  res.send("VibeCash Voice Server Running");
+  res.send("VibeCash WebRTC Signaling Server Running");
 });
 
 io.on("connection", (socket) => {
@@ -53,9 +53,30 @@ io.on("connection", (socket) => {
 
   });
 
-  socket.on("voice", (buffer) => {
+  socket.on("offer", (data) => {
 
-    socket.to(socket.roomId).emit("voice", buffer);
+    socket.to(data.roomId).emit("offer", {
+      sdp: data.sdp,
+      userId: data.userId
+    });
+
+  });
+
+  socket.on("answer", (data) => {
+
+    socket.to(data.roomId).emit("answer", {
+      sdp: data.sdp,
+      userId: data.userId
+    });
+
+  });
+
+  socket.on("ice-candidate", (data) => {
+
+    socket.to(data.roomId).emit("ice-candidate", {
+      candidate: data.candidate,
+      userId: data.userId
+    });
 
   });
 
@@ -84,5 +105,5 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
-  console.log("Voice Server Started on " + PORT);
+  console.log("WebRTC Signaling Server Started on " + PORT);
 });
